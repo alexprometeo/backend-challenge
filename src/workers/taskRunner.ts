@@ -75,8 +75,47 @@ export class TaskRunner {
 
             if (anyFailed) {
                 currentWorkflow.status = WorkflowStatus.Failed;
+
+                const failedTasks = currentWorkflow.tasks.filter(t => t.status === TaskStatus.Failed);
+                currentWorkflow.finalResult = JSON.stringify({
+                            status: 'failed',
+                            failedTasks: failedTasks.map(t => ({
+                                taskId: t.taskId,
+                                taskType: t.taskType,
+                                error: 'Task execution failed'
+                            }))
+                });                
             } else if (allCompleted) {
                 currentWorkflow.status = WorkflowStatus.Completed;
+
+                const resultRepository = this.taskRepository.manager.getRepository(Result);
+                const aggregatedResults = {
+                    workflowId: currentWorkflow.workflowId,
+                    status: 'completed',
+                    tasks: [] as {
+                        taskId: string;
+                        taskType: string;
+                        stepNumber: number;
+                        output: any;
+                    }[]
+                };
+
+                for (const task of currentWorkflow.tasks) {
+                    if (task.resultId) {
+                        const result = await resultRepository.findOne({ 
+                            where: { resultId: task.resultId } 
+                        });
+                        
+                        aggregatedResults.tasks.push({
+                            taskId: task.taskId,
+                            taskType: task.taskType,
+                            stepNumber: task.stepNumber,
+                            output: result && result.data ? JSON.parse(result.data) : null
+                        });
+                    }
+                }
+
+                currentWorkflow.finalResult = JSON.stringify(aggregatedResults);                
             } else {
                 currentWorkflow.status = WorkflowStatus.InProgress;
             }
