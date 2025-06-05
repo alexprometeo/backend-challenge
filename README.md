@@ -331,4 +331,196 @@ Implement an API endpoint to retrieve the final results of a completed workflow.
   - Update the README file to include instructions for testing the new features.
   - Document the API endpoints with request and response examples.
 
+
+## Features Implemented
+
+- **PolygonAreaJob**:           Calculates polygon area from GeoJSON using @turf/area
+- **ReportGenerationJob**:      Generates reports by aggregating outputs from multiple tasks
+- **Interdependent Tasks**:     Tasks can depend on the completion of other tasks
+- **Final Results**:            Workflows store aggregated results from all tasks
+- **API Endpoints**:            Query workflow status and retrieve final results
+
+## New Jobs
+
+### PolygonAreaJob
+Calculates the area of a polygon from GeoJSON data provided in the task.
+- **Input**: GeoJSON polygon in task.geoJson field
+- **Output**: Area in square meters
+- **Error Handling**: Gracefully handles invalid GeoJSON and marks task as failed
+
+### ReportGenerationJob
+Generates a comprehensive report by aggregating outputs from all preceding tasks in the workflow.
+- **Input**: All completed tasks in the workflow
+- **Output**: JSON report with task outputs and aggregated data
+- **Error Handling**: Includes error information for failed tasks
+
+## API Endpoints
+
+### 1. Get Workflow Status
+```
+
+GET /workflow/:id/status
+
+```
+
+**Successful Response (200):**
+```
+
+{
+"workflowId": "3433c76d-f226-4c91-afb5-7dfc7accab24",
+"status": "in_progress",
+"completedTasks": 3,
+"totalTasks": 5
+}
+
+```
+
+**Error Responses:**
+- `404`: Workflow not found
+
+### 2. Get Workflow Results
+```
+
+GET /workflow/:id/results
+
+```
+
+**Successful Response (200):**
+```
+
+{
+"workflowId": "3433c76d-f226-4c91-afb5-7dfc7accab24",
+"status": "completed",
+"finalResult": {
+"workflowId": "3433c76d-f226-4c91-afb5-7dfc7accab24",
+"status": "completed",
+"tasks": [
+{
+"taskId": "task-1-id",
+"taskType": "polygonArea",
+"stepNumber": 1,
+"output": { "area": 1234567.89 }
+},
+{
+"taskId": "task-2-id",
+"taskType": "dataAnalysis",
+"stepNumber": 2,
+"output": "Analysis result"
+}
+]
+}
+}
+
+```
+
+**Error Responses:**
+- `404`: Workflow not found
+- `400`: Workflow not yet completed
+
+## Workflow Dependencies
+
+The system now supports task dependencies through the `dependsOn` field in workflow definitions.
+
+### Example Workflow YAML with Dependencies:
+```
+
+steps:
+
+- taskType: "polygonArea"
+stepNumber: 1
+- taskType: "analysis"
+stepNumber: 2
+dependsOn: 1
+- taskType: "generateReport"
+stepNumber: 3
+dependsOn: 2
+
+```
+
+### How Dependencies Work:
+1. Tasks with `dependsOn` will not execute until their dependency is completed
+2. The TaskRunner automatically waits for dependent tasks to finish
+3. Outputs from dependent tasks can be passed as inputs to the current task
+4. Failed dependencies prevent dependent tasks from executing
+
+## Installation and Setup
+
+### 1. Install Dependencies
+```
+
+npm install
+npm install @turf/area
+
+```
+
+### 2. Start the Server
+```
+
+npm start
+
+```
+
+The server will start at `http://localhost:3000`
+
+## Testing the New Features
+
+### 1. Create a Workflow with Dependencies
+```
+
+curl -X POST http://localhost:3000/analysis/start \
+-H "Content-Type: application/json" \
+-d '{
+"clientId": "test-client",
+"geoJson": "{\"type\":\"Polygon\",\"coordinates\":[[,[^1],[^1][^1],[^1],]]}",
+"workflowYaml": "steps:\n  - taskType: \"polygonArea\"\n    stepNumber: 1\n  - taskType: \"generateReport\"\n    stepNumber: 2\n    dependsOn: 1"
+}'
+
+```
+
+### 2. Monitor Workflow Status
+```
+
+curl http://localhost:3000/workflow/{workflow-id}/status
+
+```
+
+### 3. Retrieve Final Results (when completed)
+```
+
+curl http://localhost:3000/workflow/{workflow-id}/results
+
+```
+
+## Architecture Overview
+
+### Components:
+- **Express Server**: Handles HTTP requests and API endpoints
+- **TypeORM + SQLite**: Database layer for workflows, tasks, and results
+- **Job System**: Pluggable job execution system
+- **Task Worker**: Background worker that processes queued tasks
+- **Dependency Manager**: Ensures tasks execute in the correct order
+
+### Workflow Execution Flow:
+1. Client submits workflow definition
+2. WorkflowFactory creates tasks with dependencies
+3. TaskWorker picks up executable tasks (no dependencies or dependencies completed)
+4. Jobs execute and store results
+5. Final results are aggregated when workflow completes
+6. Client can query status and results via API
+
+## Available Job Types
+
+- `analysis`: Data analysis job
+- `notification`: Email notification job
+- `polygonArea`: **NEW** - Calculate polygon area from GeoJSON
+- `generateReport`: **NEW** - Generate aggregated report from all task outputs
+
+## Error Handling
+
+- Invalid GeoJSON in PolygonAreaJob marks task as failed
+- Failed tasks are included in final reports with error information
+- API endpoints return appropriate HTTP status codes
+- Comprehensive error logging throughout the system  
+
+
 ---
