@@ -3,7 +3,7 @@ import * as yaml from 'js-yaml';
 import { DataSource } from 'typeorm';
 import { Workflow } from '../models/Workflow';
 import { Task } from '../models/Task';
-import {TaskStatus} from "../workers/taskRunner";
+import { TaskStatus } from "../workers/taskRunner";
 
 export enum WorkflowStatus {
     Initial = 'initial',
@@ -13,6 +13,7 @@ export enum WorkflowStatus {
 }
 
 interface WorkflowStep {
+    dependsOn: any;
     taskType: string;
     stepNumber: number;
 }
@@ -23,7 +24,7 @@ interface WorkflowDefinition {
 }
 
 export class WorkflowFactory {
-    constructor(private dataSource: DataSource) {}
+    constructor(private dataSource: DataSource) { }
 
     /**
      * Creates a workflow by reading a YAML file and constructing the Workflow and Task entities.
@@ -44,7 +45,10 @@ export class WorkflowFactory {
 
         const savedWorkflow = await workflowRepository.save(workflow);
 
-        const tasks: Task[] = workflowDef.steps.map(step => {
+        const tasks: Task[] = [];
+        const stepNumberToTask = new Map<number, Task>();
+
+        for (const step of workflowDef.steps) {
             const task = new Task();
             task.clientId = clientId;
             task.geoJson = geoJson;
@@ -52,10 +56,35 @@ export class WorkflowFactory {
             task.taskType = step.taskType;
             task.stepNumber = step.stepNumber;
             task.workflow = savedWorkflow;
-            return task;
-        });
+
+            stepNumberToTask.set(step.stepNumber, task);
+
+            tasks.push(task);
+        }
+
+        for(const step of workflowDef.steps) {
+            if(step.dependsOn) {
+
+                const task = tasks.find(t => t.stepNumber === step.stepNumber);
+                const dependencyTask = stepNumberToTask.get(step.dependsOn);
+
+                if (task && dependencyTask) {
+                    (task as any)._dependsOnStep = step.dependsOn;
+                }
+            }
+        }
 
         await taskRepository.save(tasks);
+
+        for (const task of tasks) {
+            if ((task as any)._dependsOnStep) {
+                const dependencyTask = tasks.find(t => t.stepNumber === (task as any)._dependsOnStep)
+                if (dependencyTask) task.dependsOn = dependencyTask.taskId
+            }
+        }
+
+        // We save again to include the correct reference to the dependecy task
+        await taskRepository.save(tasks);        
 
         return savedWorkflow;
     }
