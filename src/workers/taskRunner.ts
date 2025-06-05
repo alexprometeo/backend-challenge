@@ -26,12 +26,26 @@ export class TaskRunner {
         task.status = TaskStatus.InProgress;
         task.progress = 'starting job...';
         await this.taskRepository.save(task);
+
+        let dependencyResult = null;
+
+        if (task.dependsOn) {
+            const resultRepository = this.taskRepository.manager.getRepository(Result);
+            const dependencyTask = await this.taskRepository.findOne({where: { taskId: task.dependsOn}});
+
+            if (dependencyTask?.resultId) {
+                const result = await resultRepository.findOne({where: { resultId: dependencyTask.resultId}});
+
+                dependencyResult = result && result.data ? JSON.parse(result.data) : null;
+            }
+        }
+
         const job = getJobForTaskType(task.taskType);
 
         try {
             console.log(`Starting job ${task.taskType} for task ${task.taskId}...`);
             const resultRepository = this.taskRepository.manager.getRepository(Result);
-            const taskResult = await job.run(task);
+            const taskResult = await job.run(task, dependencyResult);
             console.log(`Job ${task.taskType} for task ${task.taskId} completed successfully.`);
             const result = new Result();
             result.taskId = task.taskId!;
